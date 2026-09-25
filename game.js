@@ -65,29 +65,62 @@ function pushSample(nx, nz, nh, d) {
   roadSamples.push({ x, z, h, dist });
 }
 function layStraight(len) {
+  len *= 1.2;
   const n = Math.max(1, Math.round(len / STEP));
   const step = len / n;
   for (let i = 1; i <= n; i++) pushSample(x + Math.sin(h) * step, z + Math.cos(h) * step, h, step);
 }
-function layArc(deg) {
+function layArc(deg, radius) {
   const rad = deg * Math.PI / 180;
-  const radius = 52;
-  const steps = Math.max(2, Math.round(Math.abs(rad) * radius / STEP));
+  const r = (radius || 52) * 1.2;
+  const steps = Math.max(2, Math.round(Math.abs(rad) * r / STEP));
   const dh = rad / steps;
   for (let i = 1; i <= steps; i++) {
     const mh = h + dh * 0.5;
-    const step = radius * Math.abs(dh);
+    const step = r * Math.abs(dh);
     pushSample(x + Math.sin(mh) * step, z + Math.cos(mh) * step, h + dh, step);
   }
 }
-for (let side = 0; side < 6; side++) {
-  layStraight(56);
-  layArc(30);
-  layStraight(30);
-  layArc(-30);
-  layStraight(48);
-  layArc(60);
+function layRoad() {
+layStraight(36);
+layArc(28, 100);
+layStraight(28);
+layArc(-42, 52);
+layStraight(32);
+layArc(48, 46);
+layStraight(26);
+layArc(36, 60);
+layStraight(30);
+layArc(22, 120);
+layStraight(24);
+layArc(75, 28);
+layStraight(34);
+layArc(-40, 58);
+layStraight(28);
+layArc(23, 95);
+layStraight(150);
+layArc(32, 70);
+layStraight(36);
+layArc(-22, 110);
+layStraight(30);
+layArc(50, 44);
+layStraight(26);
+layArc(30, 80);
+layStraight(32);
+layArc(40, 50);
+layStraight(28);
+layArc(-18, 130);
+layStraight(34);
+layArc(55, 40);
+layStraight(24);
+layArc(25, 90);
+layStraight(30);
+layArc(18, 100);
+layArc(-76, 52);
+layArc(76, 52);
+layStraight(19);
 }
+layRoad();
 const roadEdge = {
   id: 0, dir: 0, len: roadSamples[roadSamples.length - 1].dist,
   samples: roadSamples, limit: 60, camera: false,
@@ -358,36 +391,55 @@ renderer.toneMappingExposure = 1;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xe24a90, 70, 190);
 scene.background = new THREE.Color(0xe24a90);
-function makeSkyTexture() {
-  const c = document.createElement("canvas");
-  c.width = 4;
-  c.height = 256;
-  const g = c.getContext("2d");
-  const bands = ["#221848", "#3c2070", "#642888", "#9a348c", "#cc3c94", "#ee4c9c", "#ff6aaf", "#ff96c4"];
+const SKY_NIGHT = [0x221848, 0x3c2070, 0x642888, 0x9a348c, 0xcc3c94, 0xee4c9c, 0xff6aaf, 0xff96c4];
+const SKY_WARM = [0x8a1020, 0xc41c24, 0xe23a22, 0xff5a28, 0xff7a30, 0xff9a32, 0xffc43a, 0xffe14a];
+function mixHex(a, b, t) {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
+}
+function paintSkyMix(t) {
   const horizon = 128;
   const bandTop = 88;
-  g.fillStyle = bands[0];
+  const g = skyCanvas.getContext("2d");
+  const top = mixHex(SKY_NIGHT[0], SKY_WARM[0], t);
+  g.fillStyle = "#" + top.toString(16).padStart(6, "0");
   g.fillRect(0, 0, 4, bandTop);
-  bands.forEach((color, i) => {
-    const y0 = Math.floor(bandTop + i * (horizon - bandTop) / bands.length);
-    const y1 = Math.floor(bandTop + (i + 1) * (horizon - bandTop) / bands.length);
-    g.fillStyle = color;
+  SKY_NIGHT.forEach((color, i) => {
+    const mixed = mixHex(color, SKY_WARM[i], t);
+    const y0 = Math.floor(bandTop + i * (horizon - bandTop) / SKY_NIGHT.length);
+    const y1 = Math.floor(bandTop + (i + 1) * (horizon - bandTop) / SKY_NIGHT.length);
+    g.fillStyle = "#" + mixed.toString(16).padStart(6, "0");
     g.fillRect(0, y0, 4, Math.max(1, y1 - y0));
   });
-  g.fillStyle = bands[bands.length - 1];
+  const bottom = mixHex(SKY_NIGHT[SKY_NIGHT.length - 1], SKY_WARM[SKY_WARM.length - 1], t);
+  g.fillStyle = "#" + bottom.toString(16).padStart(6, "0");
   g.fillRect(0, horizon, 4, 256 - horizon);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.generateMipmaps = false;
-  return tex;
+  skyTex.needsUpdate = true;
+  const fog = mixHex(0xe24a90, 0xff7a30, t);
+  scene.fog.color.setHex(fog);
+  scene.background.setHex(fog);
 }
+const skyCanvas = document.createElement("canvas");
+skyCanvas.width = 4;
+skyCanvas.height = 256;
+const skyTex = new THREE.CanvasTexture(skyCanvas);
+skyTex.colorSpace = THREE.SRGBColorSpace;
+skyTex.magFilter = THREE.NearestFilter;
+skyTex.minFilter = THREE.NearestFilter;
+skyTex.wrapS = THREE.ClampToEdgeWrapping;
+skyTex.wrapT = THREE.ClampToEdgeWrapping;
+skyTex.generateMipmaps = false;
+let skyMix = 0;
+let skyTarget = 0;
+let skyClock = 0;
+paintSkyMix(0);
 const sky = new THREE.Mesh(
   new THREE.SphereGeometry(380, 32, 24),
-  new THREE.MeshBasicMaterial({ map: makeSkyTexture(), side: THREE.BackSide, fog: false, depthWrite: false })
+  new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false })
 );
 sky.renderOrder = -3;
 scene.add(sky);
@@ -569,9 +621,13 @@ for (const edge of edges) {
     const height = 8 + (Math.abs(Math.floor(edge.id + dist * 0.3 + side)) % 5) * 1.8;
     const w = 9.2;
     const d = 8;
-    const palette = [0x8a8d94, 0x6f737a, 0x6a5158, 0x7a5c64, 0x5c585e, 0x7d6870, 0x64686e];
+    const burgundy = [0x5c1428, 0x4a1020, 0x6e1c32, 0x3d0e1c];
+    const blue = [0x16325f, 0x1c447c, 0x122848, 0x24508f];
+    const green = [0x145232, 0x0f3e26, 0x1d6a3c, 0x123628];
+    const districts = [burgundy, blue, green];
+    const palette = districts[Math.floor(dist / 320) % districts.length];
     const wallMat = new THREE.MeshBasicMaterial({
-      color: palette[Math.abs(Math.floor(edge.id * 3 + dist + side * 5)) % palette.length],
+      color: palette[Math.abs(Math.floor(dist * 0.2 + side * 3)) % palette.length],
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
     });
     const group = new THREE.Group();
@@ -630,21 +686,94 @@ function makeCow() {
   }
   return g;
 }
+function makePig() {
+  const g = new THREE.Group();
+  const hide = new THREE.MeshStandardMaterial({ color: 0xf2a3b5, roughness: 0.75 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0xc46b84, roughness: 0.8 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.46, 0.42), hide);
+  body.position.y = 0.48;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 0.3), hide);
+  head.position.set(0.58, 0.5, 0);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.16), dark);
+  snout.position.set(0.76, 0.44, 0);
+  g.add(body, head, snout);
+  for (const x of [-0.28, 0.22]) {
+    for (const z of [-0.12, 0.12]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.26, 0.1), dark);
+      leg.position.set(x, 0.13, z);
+      g.add(leg);
+    }
+  }
+  return g;
+}
+function makeChicken() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0xf4f0e4, roughness: 0.7 })
+  );
+  body.scale.set(1.3, 1, 1);
+  body.position.y = 0.32;
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0xfff6e8, roughness: 0.6 })
+  );
+  head.position.set(0.24, 0.48, 0);
+  const comb = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, 0.1, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0xe23a3a, roughness: 0.5 })
+  );
+  comb.position.set(0.22, 0.6, 0);
+  const beak = new THREE.Mesh(
+    new THREE.BoxGeometry(0.1, 0.05, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xf0b429, roughness: 0.5 })
+  );
+  beak.position.set(0.36, 0.46, 0);
+  g.add(body, head, comb, beak);
+  for (const z of [-0.06, 0.06]) {
+    const leg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03, 0.16, 0.03),
+      new THREE.MeshStandardMaterial({ color: 0xf0b429, roughness: 0.5 })
+    );
+    leg.position.set(0, 0.08, z);
+    g.add(leg);
+  }
+  return g;
+}
 const trunkMat = new THREE.MeshBasicMaterial({ color: 0x5a4030 });
 const leafMat = new THREE.MeshBasicMaterial({ color: 0x2f6a3a });
+const palmMat = new THREE.MeshBasicMaterial({ color: 0x2f9a45 });
 const fieldMat = new THREE.MeshBasicMaterial({ color: 0x245c32 });
+function makePalm() {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 6.4, 6), trunkMat);
+  trunk.position.y = 3.2;
+  g.add(trunk);
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * Math.PI * 2;
+    const frond = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 3.2), palmMat);
+    frond.position.set(Math.sin(a) * 1.15, 6.2, Math.cos(a) * 1.15);
+    frond.rotation.y = -a;
+    frond.rotation.x = 0.5;
+    g.add(frond);
+  }
+  return g;
+}
 for (const edge of edges) {
   for (let dist = 8; dist < edge.len - 8; dist += 9) {
     const pose = poseOn(edge, dist);
     const bending = Math.abs(angDiff(poseOn(edge, dist - 8).h, poseOn(edge, dist + 8).h)) > 0.08;
+    const palms = Math.floor(dist / 320) % 2 === 1;
     for (const side of [-1, 1]) {
       if (!bending && hash(dist, side * 3) > 0.82) continue;
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.5, 6), trunkMat);
-      trunk.position.y = 0.75;
-      const crown = new THREE.Mesh(new THREE.ConeGeometry(1.15, 2.5, 7), leafMat);
-      crown.position.y = 2.35;
-      tree.add(trunk, crown);
+      const tree = palms ? makePalm() : new THREE.Group();
+      if (!palms) {
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.5, 6), trunkMat);
+        trunk.position.y = 0.75;
+        const crown = new THREE.Mesh(new THREE.ConeGeometry(1.15, 2.5, 7), leafMat);
+        crown.position.y = 2.35;
+        tree.add(trunk, crown);
+      }
       const out = ROAD_HALF + (bending ? 4.2 : 11.5) + hash(dist, side) * 3;
       tree.position.set(pose.x + pose.rx * side * out, 0, pose.z + pose.rz * side * out);
       scene.add(tree);
@@ -1051,6 +1180,59 @@ function placeOnRoad(obj, dist, lat, y, edge) {
   obj.rotation.y = p.h;
   return p;
 }
+const ramps = [];
+const rampMat = new THREE.MeshBasicMaterial({ color: 0x8d9298 });
+const rampStripe = new THREE.MeshBasicMaterial({ color: 0x5e656c });
+const lanes = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5];
+{
+  let run = 0;
+  for (let i = 1; i <= roadSamples.length; i++) {
+    const prev = roadSamples[Math.max(0, i - 1)];
+    const cur = roadSamples[Math.min(i, roadSamples.length - 1)];
+    const turned = i === roadSamples.length || Math.abs(angDiff(roadSamples[run].h, cur.h)) > 0.045;
+    if (!turned) continue;
+    const len = prev.dist - roadSamples[run].dist;
+    if (len > 26 && Math.random() < 0.6) {
+      const lat = lanes[Math.floor(Math.random() * lanes.length)] * LANE;
+      const depth = 3.2 + Math.random() * Math.min(7, len * 0.35);
+      const rise = 0.28 + Math.random() * 0.7;
+      const group = new THREE.Group();
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(LANE * 0.92, 0.16, depth), rampMat);
+      slab.rotation.x = -0.16 - rise * 0.12;
+      slab.position.y = rise * 0.55;
+      const band = new THREE.Mesh(new THREE.BoxGeometry(LANE * 0.92, 0.08, 0.4), rampStripe);
+      band.position.set(0, rise * 0.85, depth * 0.28);
+      group.add(slab, band);
+      const spot = roadSamples[run].dist + len * 0.5;
+      placeOnRoad(group, spot, lat, 0, roadEdge);
+      scene.add(group);
+      ramps.push({ dist: spot, lat, power: rise, reach: depth * 0.35 });
+    }
+    run = i;
+  }
+}
+let jumpY = 0;
+let jumpV = 0;
+let rampCd = 0;
+function stepJump(dt) {
+  if (rampCd > 0) rampCd -= dt;
+  if (jumpY <= 0.02 && rampCd <= 0 && speed > 4) {
+    for (const ramp of ramps) {
+      const gap = wrapSigned(ramp.dist - distance, roadEdge.len);
+      if (gap > -1.4 && gap < ramp.reach && Math.abs(lateral - ramp.lat) < LANE * 0.55) {
+        jumpV = 2.4 + ramp.power * 6 + Math.abs(speed) * 0.16;
+        jumpY = 0.08;
+        rampCd = 0.7;
+        break;
+      }
+    }
+  }
+  if (jumpY > 0 || jumpV > 0) {
+    jumpV -= 18 * dt;
+    jumpY += jumpV * dt;
+    if (jumpY <= 0) { jumpY = 0; jumpV = 0; }
+  }
+}
 
 let state = "menu";
 let gear = "P";
@@ -1177,6 +1359,9 @@ function resetShift() {
     car.latTarget = car.home;
     car.lat = car.home;
   });
+  jumpY = 0;
+  jumpV = 0;
+  rampCd = 0;
   corner = null;
   setGear("D");
   state = "play";
@@ -1187,6 +1372,8 @@ function resetShift() {
   spawnCrosser("cow");
   spawnCrosser("person");
   spawnCrosser("person");
+  spawnCrosser("pig");
+  spawnCrosser("chicken");
   say("D · ВПЕРЁД");
 }
 
@@ -1204,9 +1391,10 @@ let driveGear = 0;
 let engineCut = 1;
 let shiftSurge = 0;
 let shiftLock = 0;
-const GEAR_KMH = [30, 60, 90, 132];
+const GEAR_KMH = [30, 60, 90, 130, 165, 200];
 const TOP_KMH = 132;
 const TOP_MS = TOP_KMH / 3.6;
+const SLOW_MS = 130 / 3.6;
 const ABSOLUTE_KMH = 200;
 const ABSOLUTE_MS = ABSOLUTE_KMH / 3.6;
 function stepDriveGear() {
@@ -1216,9 +1404,9 @@ function stepDriveGear() {
   }
   const kmh = Math.abs(speed) * 3.6;
   let next = 0;
-  if (kmh >= 30) next = 1;
-  if (kmh >= 60) next = 2;
-  if (kmh >= 90) next = 3;
+  for (let i = 1; i < GEAR_KMH.length; i++) {
+    if (kmh >= GEAR_KMH[i - 1]) next = i;
+  }
   if (next !== driveGear) {
     driveGear = next;
     if (engine) engine.rpm = 520;
@@ -1564,7 +1752,7 @@ function update(dt) {
   else if (gear === "D") target = pedal * ABSOLUTE_MS;
   else if (gear === "R") target = -pedal * 24;
   const rate = braking ? 26 + stickPower * 16 : gear === "P" ? 18 : pedal > 0 ? 4.9 : 5;
-  const accel = gear === "D" && pedal > 0 && speed > TOP_MS && target > speed ? 0.35 : rate;
+  const accel = gear === "D" && pedal > 0 && speed > SLOW_MS && target > speed ? 0.35 : rate;
   speed += clamp(target - speed, -rate * dt, accel * dt);
   if (inTurn && Math.abs(speed) > 18) {
     const capped = 18 * Math.sign(speed);
@@ -1659,6 +1847,19 @@ function update(dt) {
   distance = ((distance % playerEdge.len) + playerEdge.len) % playerEdge.len;
 
   for (const car of traffic) {
+    if ((car.flyY || 0) > 0 || (car.flyV || 0) > 0) {
+      car.flyV -= 20 * dt;
+      car.flyY += car.flyV * dt;
+      car.dist += (car.speed || car.base || 0) * dt * 0.35;
+      if (car.flyY <= 0) {
+        car.flyY = 0;
+        car.flyV = 0;
+        car.wreck = false;
+        car.struck = false;
+        car.speed = car.base;
+      }
+      continue;
+    }
     if (car.wreck) {
       car.speed += (0 - car.speed) * Math.min(1, dt * 1.1);
       if (Math.abs(car.speed) < 0.25) {
@@ -1722,7 +1923,7 @@ function update(dt) {
     dz = ((dz % playerEdge.len) + playerEdge.len) % playerEdge.len;
     if (dz > playerEdge.len * 0.5) dz -= playerEdge.len;
     const dx = lateral - car.lat;
-    if (Math.abs(dz) < 4.6 && Math.abs(dx) < 1.85) {
+    if (Math.abs(dz) < 4.6 && Math.abs(dx) < 1.85 && jumpY < 1.1 && (car.flyY || 0) < 1) {
       const overlap = 4.6 - Math.abs(dz);
       const len = playerEdge.len;
       if (car.oncoming) {
@@ -1824,6 +2025,7 @@ function update(dt) {
   }
   prevDistance = distance;
   stepWalkers(dt);
+  stepJump(dt);
 
   if (info && info.ahead < 22) {
     hintEl.textContent = info.text;
@@ -1957,17 +2159,21 @@ function launchPerson(p) {
   fillPassengers();
 }
 function spawnCrosser(kind) {
-  const person = kind === "person";
-  const mesh = person
+  const mesh = kind === "person"
     ? makePerson([0xe24b8a, 0x3ec6ff, 0xffe14a, 0xc8f54a][Math.floor(Math.random() * 4)])
+    : kind === "pig" ? makePig()
+    : kind === "chicken" ? makeChicken()
     : makeCow();
   if (mesh.userData.beacon) mesh.userData.beacon.visible = false;
   const dir = Math.random() < 0.5 ? 1 : -1;
-  if (!person) mesh.scale.setScalar(1.6);
+  if (kind === "cow") mesh.scale.setScalar(1.6);
+  else if (kind === "pig") mesh.scale.setScalar(1.35);
+  else if (kind === "chicken") mesh.scale.setScalar(1.15);
   scene.add(mesh);
   crossers.push({
     mesh,
-    cow: !person,
+    animal: kind !== "person",
+    pace: kind === "chicken" ? 1.45 : kind === "pig" ? 0.7 : 0.85,
     dist: (distance + 36 + Math.random() * 28) % playerEdge.len,
     lat: (Math.random() * 2 - 1) * (ROAD_HALF - 1.5),
     dir,
@@ -1983,6 +2189,7 @@ function stepWalkers(dt) {
     nextCross = 140 + Math.random() * 100;
     spawnCrosser("cow");
     spawnCrosser("person");
+    spawnCrosser(Math.random() < 0.5 ? "pig" : "chicken");
   }
   for (let i = crossers.length - 1; i >= 0; i--) {
     const w = crossers[i];
@@ -1990,10 +2197,10 @@ function stepWalkers(dt) {
       w.y += 16 * dt;
       w.spin += dt * 9;
     } else {
-      w.lat += w.dir * 0.85 * dt;
+      w.lat += w.dir * (w.pace || 0.85) * dt;
     }
     placeOnRoad(w.mesh, w.dist, w.lat, w.y, playerEdge);
-    if (!w.flying && w.cow && w.dir > 0) w.mesh.rotation.y += Math.PI;
+    if (!w.flying && w.animal && w.dir > 0) w.mesh.rotation.y += Math.PI;
     w.mesh.rotation.z = w.spin;
     if (!w.flying && Math.abs(w.lat) > ROAD_HALF + 2.2) {
       scene.remove(w.mesh);
@@ -2003,7 +2210,7 @@ function stepWalkers(dt) {
     let gap = w.dist - distance;
     gap = ((gap % playerEdge.len) + playerEdge.len) % playerEdge.len;
     if (gap > playerEdge.len * 0.5) gap -= playerEdge.len;
-    if (!w.flying && Math.abs(gap) < 2.4 && Math.abs(w.lat - lateral) < 1.35) {
+    if (!w.flying && jumpY < 1.1 && Math.abs(gap) < 2.4 && Math.abs(w.lat - lateral) < 1.35) {
       w.flying = true;
       w.y = 0.4;
       w.spin = (Math.random() < 0.5 ? -1 : 1) * 0.4;
@@ -2023,8 +2230,9 @@ function placeWorld(dt) {
   (taxi.userData.wheels || []).forEach((w) => { w.rotation.x += spin; });
   taxi.userData.fronts.forEach((pivot) => { pivot.rotation.y = wheel; });
   const pose = playerPose();
-  taxi.position.set(pose.x + pose.rx * lateral, 0, pose.z + pose.rz * lateral);
-  taxi.rotation.y = pose.h + bodyYaw;
+  taxi.position.set(pose.x + pose.rx * lateral, jumpY, pose.z + pose.rz * lateral);
+  taxi.rotation.y = pose.h + bodyYaw * 1.4;
+  taxi.rotation.x = clamp(-jumpV * 0.012, -0.28, 0.22);
   for (const cow of cows) {
     const wander = Math.sin(worldT * 0.18 + cow.phase) * 3;
     const spot = poseOn(roadEdge, cow.dist + wander);
@@ -2039,7 +2247,7 @@ function placeWorld(dt) {
     if (mark.userData.life <= 0) mark.visible = false;
   }
   for (const car of traffic) {
-    const placed = placeOnRoad(car.mesh, car.dist, car.lat, 0, car.edge);
+    const placed = placeOnRoad(car.mesh, car.dist, car.lat, car.flyY || 0, car.edge);
     car.mesh.rotation.y = placed.h + (car.oncoming ? Math.PI : 0);
     (car.mesh.userData.wheels || []).forEach((w) => { w.rotation.x += car.speed * dt * 1.4; });
     const sway = clamp((car.latTarget - car.lat) * 0.35, -0.4, 0.4);
@@ -2141,7 +2349,7 @@ function aimCamera(dt, attract) {
   const camLat = clamp(lateral, -ROAD_HALF + 0.6, ROAD_HALF - 0.6);
   const desired = new THREE.Vector3(
     p.x + p.rx * camLat - p.fx * back,
-    5.5,
+    5.5 + jumpY * 0.75,
     p.z + p.rz * camLat - p.fz * back
   );
   if (shake > 0) {
@@ -2337,7 +2545,18 @@ showSheet("menu");
 
 const clock = new THREE.Clock();
 function frame() {
-  update(Math.min(0.05, clock.getDelta()));
+  const dt = Math.min(0.05, clock.getDelta());
+  skyClock += dt;
+  if (skyClock >= 90) {
+    skyClock = 0;
+    skyTarget = skyTarget === 0 ? 1 : 0;
+  }
+  if (Math.abs(skyMix - skyTarget) > 0.001) {
+    const step = Math.min(Math.abs(skyTarget - skyMix), dt / 6);
+    skyMix += Math.sign(skyTarget - skyMix) * step;
+    paintSkyMix(skyMix);
+  }
+  update(dt);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }

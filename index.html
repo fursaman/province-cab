@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Province Cab</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="phone">
+    <canvas id="view"></canvas>
+    <div id="edge-blur"></div>
+
+    <header id="hud" class="play-only">
+      <div>
+        <div id="score">СЧЁТ 0</div>
+        <div id="combo">серия x1</div>
+        <div id="protocol">ПРОТОКОЛ 0</div>
+      </div>
+      <div id="hud-right">
+        <div id="meter"><span id="speed">000</span><small>КМ/Ч</small></div>
+        <div id="hud-actions">
+          <button id="sfx-btn" type="button" aria-label="Звуки"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M1 6h3l5-4v12L4 10H1V6zm9.2.4 1.4 1.4-1.4 1.4 1 1 1.4-1.4 1.4 1.4 1-1-1.4-1.4 1.4-1.4-1-1-1.4 1.4-1.4-1.4z"/></svg></button>
+          <button id="music-btn" type="button" aria-label="Музыка">♪</button>
+          <button id="pause-btn" type="button">ПАУЗА</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="fare" class="play-only"></div>
+    <div id="stunt" class="play-only"></div>
+    <div id="hint" class="play-only"></div>
+    <div id="toast"></div>
+    <div id="flash"></div>
+
+    <div id="stick" class="play-only" aria-label="Газ и руль">
+      <div id="steer-band" aria-hidden="true"><span class="outer"></span><span class="inner"></span><span class="inner"></span><span class="outer"></span></div>
+      <span class="stick-tag" id="tag-gas">газ</span>
+      <span class="stick-tag" id="tag-left">лево</span>
+      <span class="stick-tag" id="tag-right">право</span>
+      <div id="stick-fill"></div>
+      <div id="stick-knob"></div>
+    </div>
+
+    <section id="menu" class="sheet">
+      <p class="eyebrow">ночная смена</p>
+      <h1>PROVINCE CAB</h1>
+      <ul>
+        <li>Внизу по центру зажми рычаг: вверх — газ, вниз — задний ход, влево и вправо — поворот.</li>
+        <li>Передачи переключаются сами, как в автомате.</li>
+        <li>Если камера поймала выше знака — ПРОТОКОЛ. За заказы — очки.</li>
+        <li>Пассажир машет у обочины, садится, и машина трогается.</li>
+      </ul>
+      <button id="start-btn" class="primary" type="button">ЗА РУЛЬ</button>
+      <label class="vol" for="sfx">
+        <span>ЗВУКИ <b id="sfx-read">10%</b></span>
+        <input id="sfx" type="range" min="0" max="100" value="10">
+      </label>
+      <label class="vol" for="vol">
+        <span>МУЗЫКА <b id="vol-read">10%</b></span>
+        <input id="vol" type="range" min="0" max="100" value="10">
+      </label>
+      <label class="vol" for="hold">
+        <span>УДЕРЖАНИЕ В ПОЛОСЕ <b id="hold-read">20%</b></span>
+        <input id="hold" type="range" min="0" max="100" value="20">
+      </label>
+      <button id="sound-btn" class="ghost" type="button">ЗВУК ВКЛ</button>
+      <p id="best"></p>
+    </section>
+
+
+    <section id="over" class="sheet hidden">
+      <h2>СМЕНА ОКОНЧЕНА</h2>
+      <p id="over-score"></p>
+      <p id="over-protocol"></p>
+      <p id="over-trips"></p>
+      <p id="over-best"></p>
+      <button id="again-btn" class="primary" type="button">ЗАНОВО</button>
+      <button id="over-menu-btn" class="ghost" type="button">В МЕНЮ</button>
+    </section>
+  </div>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

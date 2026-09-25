@@ -933,6 +933,32 @@ const taxi = new THREE.Group();
 taxi.userData.wheels = [];
 taxi.userData.fronts = [];
 scene.add(taxi);
+const cabinRig = new THREE.Group();
+cabinRig.visible = false;
+const dashMat = new THREE.MeshBasicMaterial({ color: 0x2c3036 });
+const wheelMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+const gaugeMat = new THREE.MeshBasicMaterial({ color: 0x1a1c20 });
+const needleMat = new THREE.MeshBasicMaterial({ color: 0xff9a1a });
+const dash = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.46, 0.18), dashMat);
+dash.position.set(0, 1.73, 0.58);
+const cabinWheel = new THREE.Group();
+cabinWheel.position.set(0, 1.85, 0.36);
+const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.02, 10, 28), wheelMat);
+const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 12), wheelMat);
+hub.rotation.x = Math.PI / 2;
+cabinWheel.add(ring, hub);
+const gauge = new THREE.Group();
+gauge.position.set(0.16, 1.87, 0.5);
+const gaugeFace = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.015, 18), gaugeMat);
+gaugeFace.rotation.x = Math.PI / 2;
+const speedNeedle = new THREE.Group();
+const needle = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.04, 0.006), needleMat);
+needle.position.y = 0.016;
+speedNeedle.add(needle);
+speedNeedle.position.z = 0.012;
+gauge.add(gaugeFace, speedNeedle);
+cabinRig.add(dash, cabinWheel, gauge);
+taxi.add(cabinRig);
 const taxiPaint = new THREE.TextureLoader().load("./models/taxi/paintjob.png");
 taxiPaint.colorSpace = THREE.SRGBColorSpace;
 const taxiPlate = new THREE.TextureLoader().load("./models/taxi/paintjob_plate.png");
@@ -959,6 +985,7 @@ function seatVehicle(model, length, turnAround) {
   rig.add(nose);
   return rig;
 }
+let rivalTemplate = null;
 new FBXLoader().load("./models/taxi/taxi.fbx", (model) => {
   model.traverse((child) => {
     if (!child.isMesh) return;
@@ -973,6 +1000,7 @@ new FBXLoader().load("./models/taxi/taxi.fbx", (model) => {
     });
   });
   taxi.add(seatVehicle(model, 4.6, false));
+  rivalTemplate = taxi.children[taxi.children.length - 1].clone(true);
 });
 
 const traffic = [];
@@ -1049,7 +1077,11 @@ function rebuildTraffic() {
     const oncoming = i % 2 === 1;
     const lane = i % 3;
     const lat = (oncoming ? 0.5 + lane : -(0.5 + lane)) * LANE;
-    const mesh = paintClone(trafficTemplates[i % trafficTemplates.length], carPaints[i % carPaints.length]);
+    const ready = trafficTemplates.filter(Boolean);
+    const mesh = paintClone(
+      ready[Math.floor(Math.random() * ready.length)],
+      carPaints[Math.floor(Math.random() * carPaints.length)]
+    );
     scene.add(mesh);
     const pace = oncoming ? 10 : 12;
     traffic.push({
@@ -1231,6 +1263,89 @@ function stepJump(dt) {
     jumpV -= 18 * dt;
     jumpY += jumpV * dt;
     if (jumpY <= 0) { jumpY = 0; jumpV = 0; }
+  }
+}
+
+let rival = null;
+let rivalClock = 0;
+function spawnRival() {
+  if (!rivalTemplate || rival || state !== "play") return;
+  const mesh = rivalTemplate.clone(true);
+  scene.add(mesh);
+  const ahead = Math.random() < 0.5;
+  rival = {
+    mesh,
+    dist: (distance + (ahead ? 16 : -14) + roadEdge.len) % roadEdge.len,
+    lat: clamp(lateral + (Math.random() < 0.5 ? -LANE : LANE), -ROAD_HALF + 1.2, ROAD_HALF - 1.2),
+    speed: Math.max(16, Math.abs(speed)),
+    life: 22,
+    phase: Math.random() * Math.PI * 2,
+    finish: Math.random() < 0.5 ? "ahead" : "behind",
+    yaw: 0,
+    spin: 0,
+    wreck: false,
+    hitCd: 0,
+  };
+}
+function stepRival(dt) {
+  if (state !== "play") return;
+  rivalClock += dt;
+  if (!rival && rivalClock >= 90) {
+    rivalClock = 0;
+    spawnRival();
+  }
+  if (!rival) return;
+  rival.life -= dt;
+  rival.hitCd = Math.max(0, rival.hitCd - dt);
+  rival.phase += dt * 0.45;
+  const playerMs = Math.abs(speed);
+  if (rival.wreck) {
+    rival.speed *= Math.max(0, 1 - dt * 0.85);
+    rival.yaw += rival.spin * dt;
+    rival.spin *= Math.max(0, 1 - dt * 0.7);
+  } else {
+    const pushing = Math.sin(rival.phase) > 0;
+    let target = pushing ? playerMs * 1.14 + 3 : playerMs * 0.9;
+    if (rival.life < 5) target = rival.finish === "ahead" ? playerMs * 1.5 + 8 : playerMs * 0.45;
+    rival.speed += (Math.max(10, target) - rival.speed) * Math.min(1, dt * 0.7);
+    rival.yaw *= Math.max(0, 1 - dt * 1.4);
+  }
+  rival.dist = (rival.dist + rival.speed * dt + roadEdge.len) % roadEdge.len;
+  const gap = wrapSigned(rival.dist - distance, roadEdge.len);
+  if (Math.abs(gap) < 4.2 && Math.abs(rival.lat - lateral) < 1.7 && jumpY < 1.1 && rival.hitCd <= 0) {
+    const side = Math.sign(lateral - rival.lat || 1);
+    const shove = 0.9 + Math.min(1.8, Math.abs(speed) * 0.04);
+    rival.lat = clamp(rival.lat - side * shove, -ROAD_HALF + 1, ROAD_HALF - 1);
+    rival.yaw += side * (0.7 + Math.abs(speed) * 0.035);
+    rival.spin = side * (1.4 + Math.abs(speed) * 0.06);
+    rival.speed *= 0.6;
+    speed *= 0.78;
+    rival.hitCd = 0.45;
+    rival.dist = (rival.dist + Math.sign(gap || 1) * (4.2 - Math.abs(gap)) * 0.45 + roadEdge.len) % roadEdge.len;
+    if (Math.abs(speed) > 14) rival.wreck = true;
+    playHit();
+  }
+  for (const car of traffic) {
+    const g = wrapSigned(car.dist - rival.dist, roadEdge.len);
+    if (Math.abs(g) > 4.6 || Math.abs(car.lat - rival.lat) > 1.9) continue;
+    const side = Math.sign(car.lat - rival.lat || 1);
+    car.lat = clamp(car.lat + side * 0.7, -ROAD_HALF + 1, ROAD_HALF - 1);
+    car.yaw = (car.yaw || 0) - side * 0.85;
+    rival.lat = clamp(rival.lat - side * 0.55, -ROAD_HALF + 1, ROAD_HALF - 1);
+    rival.yaw += side * 0.9;
+    rival.spin = side * 1.6;
+    rival.speed *= 0.82;
+    if (Math.abs(rival.speed - car.speed) > 7) {
+      car.wreck = true;
+      car.speed *= 0.35;
+      rival.wreck = true;
+    }
+  }
+  placeOnRoad(rival.mesh, rival.dist, rival.lat, 0, roadEdge);
+  rival.mesh.rotation.y += rival.yaw;
+  if (rival.life <= 0) {
+    scene.remove(rival.mesh);
+    rival = null;
   }
 }
 
@@ -1898,8 +2013,33 @@ function update(dt) {
     const roadLen = car.edge.len;
     car.dist = ((car.dist % roadLen) + roadLen) % roadLen;
   }
+  for (let i = 0; i < traffic.length; i++) {
+    const a = traffic[i];
+    for (let j = i + 1; j < traffic.length; j++) {
+      const b = traffic[j];
+      if (a.edge !== b.edge) continue;
+      const gap = wrapSigned(b.dist - a.dist, a.edge.len);
+      if (Math.abs(gap) > 4.8 || Math.abs(a.lat - b.lat) > 1.9 || a.bump > 0 || b.bump > 0) continue;
+      const side = Math.sign(b.lat - a.lat || 1);
+      a.lat = clamp(a.lat - side * 0.45, -ROAD_HALF + 1, ROAD_HALF - 1);
+      b.lat = clamp(b.lat + side * 0.45, -ROAD_HALF + 1, ROAD_HALF - 1);
+      a.yaw = (a.yaw || 0) + side * 0.55;
+      b.yaw = (b.yaw || 0) - side * 0.55;
+      a.bump = 0.45;
+      b.bump = 0.45;
+      if (Math.abs(a.speed) + Math.abs(b.speed) > 16) {
+        a.wreck = true;
+        b.wreck = true;
+        a.speed *= 0.4;
+        b.speed *= 0.4;
+      }
+    }
+  }
   for (const car of traffic) {
     if (!car.wreck) car.speed = car.base;
+    else car.speed *= 0.98;
+    car.yaw = (car.yaw || 0) * 0.96;
+    car.bump = Math.max(0, (car.bump || 0) - dt);
   }
 
   hitCd = Math.max(0, hitCd - dt);
@@ -2026,6 +2166,7 @@ function update(dt) {
   prevDistance = distance;
   stepWalkers(dt);
   stepJump(dt);
+  stepRival(dt);
 
   if (info && info.ahead < 22) {
     hintEl.textContent = info.text;
@@ -2229,6 +2370,8 @@ function placeWorld(dt) {
   const wheel = (moving ? axis : 0) * (0.28 + Math.abs(axis) * 0.34);
   (taxi.userData.wheels || []).forEach((w) => { w.rotation.x += spin; });
   taxi.userData.fronts.forEach((pivot) => { pivot.rotation.y = wheel; });
+  cabinWheel.rotation.z = -wheel * 4;
+  speedNeedle.rotation.z = 2.35 - clamp(Math.abs(speed) * 3.6 / 200, 0, 1) * 4.5;
   const pose = playerPose();
   taxi.position.set(pose.x + pose.rx * lateral, jumpY, pose.z + pose.rz * lateral);
   taxi.rotation.y = pose.h + bodyYaw * 1.4;
@@ -2248,7 +2391,7 @@ function placeWorld(dt) {
   }
   for (const car of traffic) {
     const placed = placeOnRoad(car.mesh, car.dist, car.lat, car.flyY || 0, car.edge);
-    car.mesh.rotation.y = placed.h + (car.oncoming ? Math.PI : 0);
+    car.mesh.rotation.y = placed.h + (car.oncoming ? Math.PI : 0) + (car.yaw || 0);
     (car.mesh.userData.wheels || []).forEach((w) => { w.rotation.x += car.speed * dt * 1.4; });
     const sway = clamp((car.latTarget - car.lat) * 0.35, -0.4, 0.4);
     (car.mesh.userData.fronts || []).forEach((pivot) => { pivot.rotation.y = sway; });
@@ -2343,38 +2486,74 @@ for (let i = 0; i < 8; i++) {
 }
 scene.add(clouds);
 const camPos = new THREE.Vector3(0, 6, -10);
+let cabin = false;
 function aimCamera(dt, attract) {
   const p = playerPose();
   const back = 9.4;
   const camLat = clamp(lateral, -ROAD_HALF + 0.6, ROAD_HALF - 0.6);
-  const desired = new THREE.Vector3(
-    p.x + p.rx * camLat - p.fx * back,
-    5.5 + jumpY * 0.75,
-    p.z + p.rz * camLat - p.fz * back
-  );
-  if (shake > 0) {
-    desired.x += (Math.random() - 0.5) * shake;
-    desired.y += (Math.random() - 0.5) * shake;
-    shake = Math.max(0, shake - dt * 1.4);
+  const inCabin = cabin && !attract && state === "play";
+  let lookX;
+  let lookY;
+  let lookZ;
+  if (inCabin) {
+    taxi.updateMatrixWorld();
+    const eye = new THREE.Vector3(0, 2.25, -0.15);
+    const look = new THREE.Vector3(0, 2.15, 16);
+    eye.applyMatrix4(taxi.matrixWorld);
+    look.applyMatrix4(taxi.matrixWorld);
+    camPos.copy(eye);
+    lookX = look.x;
+    lookY = look.y;
+    lookZ = look.z;
+    if (camera.fov !== 70) {
+      camera.fov = 70;
+      camera.near = 0.05;
+      camera.updateProjectionMatrix();
+    }
+    taxi.children.forEach((child) => { child.visible = child === cabinRig; });
+    cabinRig.visible = true;
+  } else {
+    const desired = new THREE.Vector3(
+      p.x + p.rx * camLat - p.fx * back,
+      5.5 + jumpY * 0.75,
+      p.z + p.rz * camLat - p.fz * back
+    );
+    if (shake > 0) {
+      desired.x += (Math.random() - 0.5) * shake;
+      desired.y += (Math.random() - 0.5) * shake;
+      shake = Math.max(0, shake - dt * 1.4);
+    }
+    const k = attract ? 1 : 1 - Math.exp((corner ? -14 : -4.5) * dt);
+    camPos.lerp(desired, k);
+    lookX = p.x + p.rx * lateral + p.fx * 14;
+    lookY = 0.8;
+    lookZ = p.z + p.rz * lateral + p.fz * 14;
+    if (camera.fov !== 68) {
+      camera.fov = 68;
+      camera.near = 0.1;
+      camera.updateProjectionMatrix();
+    }
+    if (taxi) {
+      taxi.visible = true;
+      taxi.children.forEach((child) => { child.visible = child !== cabinRig; });
+    }
   }
-  const k = attract ? 1 : 1 - Math.exp((corner ? -14 : -4.5) * dt);
-  camPos.lerp(desired, k);
   camera.position.copy(camPos);
   if (!attract && state === "play") {
     const kmh = Math.abs(speed) * 3.6;
     const buzz = clamp((kmh - (TOP_KMH - 10)) / 10, 0, 1);
-    if (buzz > 0) {
+    if (buzz > 0 && !inCabin) {
       const t = performance.now() * 0.03;
-      camera.position.x += Math.sin(t * 1.7) * 0.036 * buzz;
-      camera.position.y += Math.sin(t * 2.5) * 0.022 * buzz;
-      camera.position.z += Math.cos(t * 2.1) * 0.03 * buzz;
+      camera.position.x += Math.sin(t * 1.7) * 0.0072 * buzz;
+      camera.position.y += Math.sin(t * 2.5) * 0.0044 * buzz;
+      camera.position.z += Math.cos(t * 2.1) * 0.006 * buzz;
     }
-    const blurT = clamp((kmh - 115) / 8, 0, 1);
+    const blurT = clamp((kmh - 160) / 8, 0, 1);
     canvas.style.filter = blurT > 0.02 ? "blur(" + (blurT * 0.9).toFixed(2) + "px)" : "none";
   } else {
     canvas.style.filter = "none";
   }
-  camera.lookAt(p.x + p.rx * lateral + p.fx * 14, 0.8, p.z + p.rz * lateral + p.fz * 14);
+  camera.lookAt(lookX, lookY, lookZ);
   sky.position.copy(camera.position);
   if (flashLife > 0) {
     flashLife -= dt;
@@ -2413,10 +2592,11 @@ function openPause() {
   showSheet("menu");
   silenceGameplay();
 }
-let hitBuf = null;
-let slapBuf = null;
+const hitClips = ["hit", "slap", "slam"];
+const clipBuf = {};
 let hitsLoading = false;
 let pendingHits = [];
+let pendingHorns = 0;
 function startHit(buf) {
   if (!buf || !audioCtx || muted || state !== "play") return;
   if (audioCtx.state === "suspended") audioCtx.resume();
@@ -2429,24 +2609,33 @@ function startHit(buf) {
   src.start();
 }
 function loadHits() {
-  if (!audioCtx || hitBuf || hitsLoading) return;
+  if (!audioCtx || clipBuf.hit || hitsLoading) return;
   hitsLoading = true;
   const decode = (url) => fetch(url).then((r) => r.arrayBuffer()).then((b) => audioCtx.decodeAudioData(b.slice(0)));
-  Promise.all([decode("./audio/hit.mp3"), decode("./audio/slap.mp3")]).then(([hit, slap]) => {
-    hitBuf = hit;
-    slapBuf = slap;
-    if (pendingHits.length) {
-      pendingHits.forEach((which) => startHit(which === "slap" ? slapBuf : hitBuf));
-      pendingHits.length = 0;
-    }
+  Promise.all([
+    decode("./audio/hit.mp3"),
+    decode("./audio/slap.mp3"),
+    decode("./audio/slam.mp3"),
+    decode("./audio/horn-twice.mp3"),
+    decode("./audio/honk.mp3"),
+  ]).then(([hit, slap, slam, hornTwice, honk]) => {
+    clipBuf.hit = hit;
+    clipBuf.slap = slap;
+    clipBuf.slam = slam;
+    clipBuf.hornTwice = hornTwice;
+    clipBuf.honk = honk;
+    pendingHits.forEach((which) => startHit(clipBuf[which]));
+    pendingHits.length = 0;
+    for (let i = 0; i < pendingHorns; i++) playHornClip();
+    pendingHorns = 0;
   }).catch(() => { hitsLoading = false; });
 }
 let hitCount = 0;
 function playHit() {
   if (muted || state !== "play") return;
+  const which = hitClips[hitCount % hitClips.length];
   hitCount += 1;
-  const which = hitCount % 2 === 1 ? "hit" : "slap";
-  const buf = which === "hit" ? hitBuf : slapBuf;
+  const buf = clipBuf[which];
   if (!buf) {
     pendingHits.push(which);
     loadHits();
@@ -2455,10 +2644,21 @@ function playHit() {
   startHit(buf);
 }
 let hornCd = 2;
+let hornPick = 0;
+function playHornClip() {
+  const which = hornPick % 2 === 0 ? "hornTwice" : "honk";
+  hornPick += 1;
+  const buf = clipBuf[which];
+  if (!buf) {
+    pendingHorns += 1;
+    loadHits();
+    return;
+  }
+  startHit(buf);
+}
 function horn() {
   if (muted || state !== "play") return;
-  blip(440, 0.16, "square", 0.09, 390);
-  setTimeout(() => { if (!muted && state === "play") blip(370, 0.2, "square", 0.08); }, 170);
+  playHornClip();
 }
 function closePause() {
   state = "play";
@@ -2472,6 +2672,10 @@ document.getElementById("start-btn").onclick = () => {
 };
 document.getElementById("sfx-btn").onclick = () => { ensureAudio(); toggleSfx(); };
 document.getElementById("music-btn").onclick = () => { ensureAudio(); toggleMusic(); };
+document.getElementById("view-btn").onclick = () => {
+  cabin = !cabin;
+  document.getElementById("view-btn").classList.toggle("on", cabin);
+};
 document.getElementById("pause-btn").onclick = () => {
   if (state !== "play") return;
   openPause();

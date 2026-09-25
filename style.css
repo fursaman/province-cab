@@ -74,7 +74,7 @@ html, body {
 }
 
 #hud-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-#pause-btn, #sfx-btn, #music-btn {
+#pause-btn, #sfx-btn, #music-btn, #view-btn {
   background: #120018;
   color: #00f6ff;
   border: 2px solid #00f6ff;
@@ -85,7 +85,7 @@ html, body {
 }
 #sfx-btn, #music-btn { width: 36px; height: 28px; font-size: 13px; line-height: 1; padding: 0; }
 #sfx-btn svg { display: block; margin: 0 auto; }
-#sfx-btn.off, #music-btn.off { color: #ff4d9a; border-color: #ff2d95; box-shadow: 2px 2px 0 #7a1848; }
+#sfx-btn.off, #music-btn.off, #view-btn.on { color: #ff4d9a; border-color: #ff2d95; box-shadow: 2px 2px 0 #7a1848; }
 
 #fare, #hint, #toast {
   position: absolute;

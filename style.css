@@ -288,6 +288,12 @@ html, body {
 
 .sheet.hidden { display: none; }
 
+#menu {
+  background:
+    linear-gradient(180deg, rgba(7, 0, 16, 0.62), rgba(7, 0, 16, 0.48) 42%, rgba(7, 0, 16, 0.7)),
+    url("./textures/menu-bg.png") center / cover no-repeat;
+}
+
 .eyebrow {
   margin: 0;
   color: #ff4d9a;
@@ -317,6 +323,23 @@ button.primary, button.ghost {
 }
 
 button.primary { background: transparent; color: #00f6ff; }
+#menu h1 { margin-bottom: 24px; }
+#start-btn {
+  margin-top: 12px;
+  margin-bottom: 36px;
+  min-height: 56px;
+  color: #fff;
+  font-size: 18px;
+  letter-spacing: 0.16em;
+  background: #ff2d95;
+  border: 3px solid #fff;
+  box-shadow: 5px 5px 0 #00f6ff;
+  text-shadow: none;
+}
+#start-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 #00f6ff;
+}
 button.primary.alt { background: transparent; color: #ff4d9a; border-color: #ff2d95; box-shadow: 0 0 10px #ff2d95; }
 button.ghost { background: transparent; color: #ffd000; border-color: #ffb000; box-shadow: 0 0 8px #ff7a18; }
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Province Cab</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <div id="phone">
@@ -45,26 +45,23 @@
     <section id="menu" class="sheet">
       <p class="eyebrow">ночная смена</p>
       <h1>PROVINCE CAB</h1>
-      <ul>
-        <li>Внизу по центру зажми рычаг: вверх — газ, вниз — задний ход, влево и вправо — поворот.</li>
-        <li>Передачи переключаются сами, как в автомате.</li>
-        <li>Если камера поймала выше знака — ПРОТОКОЛ. За заказы — очки.</li>
-        <li>Пассажир машет у обочины, садится, и машина трогается.</li>
-      </ul>
-      <button id="start-btn" class="primary" type="button">ЗА РУЛЬ</button>
+      <button id="start-btn" class="primary" type="button">ПО МАШИНАМ</button>
       <label class="vol" for="sfx">
         <span>ЗВУКИ <b id="sfx-read">10%</b></span>
         <input id="sfx" type="range" min="0" max="100" value="10">
       </label>
       <label class="vol" for="vol">
-        <span>МУЗЫКА <b id="vol-read">10%</b></span>
-        <input id="vol" type="range" min="0" max="100" value="10">
+        <span>МУЗЫКА <b id="vol-read">7%</b></span>
+        <input id="vol" type="range" min="0" max="100" value="7">
       </label>
       <label class="vol" for="hold">
         <span>УДЕРЖАНИЕ В ПОЛОСЕ <b id="hold-read">20%</b></span>
         <input id="hold" type="range" min="0" max="100" value="20">
       </label>
-      <button id="sound-btn" class="ghost" type="button">ЗВУК ВКЛ</button>
+      <label class="vol" for="traffic">
+        <span>ТРАФИК <b id="traffic-read">50%</b></span>
+        <input id="traffic" type="range" min="0" max="100" value="50">
+      </label>
       <p id="best"></p>
     </section>
 
@@ -79,6 +76,6 @@
       <button id="over-menu-btn" class="ghost" type="button">В МЕНЮ</button>
     </section>
   </div>
-  <script type="module" src="game.js"></script>
+  <script type="module" src="game.js?v=10"></script>
 </body>
 </html>

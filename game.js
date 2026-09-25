@@ -356,14 +356,14 @@ renderer.toneMapping = THREE.NoToneMapping;
 renderer.toneMappingExposure = 1;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xb46830, 70, 190);
-scene.background = new THREE.Color(0xb46830);
+scene.fog = new THREE.Fog(0xe24a90, 70, 190);
+scene.background = new THREE.Color(0xe24a90);
 function makeSkyTexture() {
   const c = document.createElement("canvas");
   c.width = 4;
   c.height = 256;
   const g = c.getContext("2d");
-  const bands = ["#7ecff5", "#b7e6f6", "#f4ef9a", "#ffe14a", "#ffc233", "#ff9a2c", "#ff6422", "#ef3c1c"];
+  const bands = ["#221848", "#3c2070", "#642888", "#9a348c", "#cc3c94", "#ee4c9c", "#ff6aaf", "#ff96c4"];
   const horizon = 128;
   const bandTop = 88;
   g.fillStyle = bands[0];
@@ -909,10 +909,12 @@ function paintClone(source, hex) {
   return mesh;
 }
 let trafficBuilt = false;
-function buildTraffic() {
-  if (trafficBuilt) return;
-  trafficBuilt = true;
-  const count = 18;
+let trafficLevel = 0.5;
+function rebuildTraffic() {
+  traffic.forEach((car) => scene.remove(car.mesh));
+  traffic.length = 0;
+  const count = Math.round(60 * trafficLevel);
+  if (!count || !trafficTemplates.length) return;
   const gap = roadEdge.len / count;
   for (let i = 0; i < count; i++) {
     const oncoming = i % 2 === 1;
@@ -934,6 +936,11 @@ function buildTraffic() {
       mesh,
     });
   }
+}
+function buildTraffic() {
+  if (!trafficTemplates.filter(Boolean).length) return;
+  trafficBuilt = true;
+  rebuildTraffic();
 }
 
 const passengers = [];
@@ -1200,6 +1207,8 @@ let shiftLock = 0;
 const GEAR_KMH = [30, 60, 90, 132];
 const TOP_KMH = 132;
 const TOP_MS = TOP_KMH / 3.6;
+const ABSOLUTE_KMH = 200;
+const ABSOLUTE_MS = ABSOLUTE_KMH / 3.6;
 function stepDriveGear() {
   if (gear !== "D") {
     driveGear = 0;
@@ -1233,7 +1242,8 @@ let engine = null;
 const music = new Audio("./audio/underclocked.mp3");
 music.loop = true;
 let musicMuted = false;
-let musicVolume = 0.1;
+let musicVolume = 0.07;
+let musicGain = null;
 let sfxVolume = 0.1;
 let sfxGain = null;
 music.volume = musicVolume;
@@ -1241,9 +1251,20 @@ const volInput = document.getElementById("vol");
 const volRead = document.getElementById("vol-read");
 
 function applyMusic() {
-  music.volume = musicMuted ? 0 : musicVolume;
+  const level = musicMuted ? 0 : musicVolume;
+  if (musicGain && audioCtx) musicGain.gain.setValueAtTime(level, audioCtx.currentTime);
+  music.volume = musicGain ? 1 : level;
   if (!musicMuted && music.paused) music.play().catch(() => {});
   if (musicMuted) music.pause();
+}
+function routeMusic() {
+  if (!audioCtx || musicGain) return;
+  const src = audioCtx.createMediaElementSource(music);
+  musicGain = audioCtx.createGain();
+  musicGain.gain.value = musicMuted ? 0 : musicVolume;
+  src.connect(musicGain);
+  musicGain.connect(audioCtx.destination);
+  music.volume = 1;
 }
 
 const holdInput = document.getElementById("hold");
@@ -1252,6 +1273,14 @@ holdInput.addEventListener("input", () => {
   laneHold = Number(holdInput.value) / 100;
   holdRead.textContent = holdInput.value + "%";
 });
+const trafficInput = document.getElementById("traffic");
+const trafficRead = document.getElementById("traffic-read");
+trafficInput.addEventListener("input", () => {
+  trafficLevel = Number(trafficInput.value) / 100;
+  trafficRead.textContent = trafficInput.value + "%";
+  if (trafficBuilt) rebuildTraffic();
+});
+volInput.addEventListener("pointerdown", () => ensureAudio());
 volInput.addEventListener("input", () => {
   musicVolume = Number(volInput.value) / 100;
   volRead.textContent = volInput.value + "%";
@@ -1271,12 +1300,18 @@ sfxInput.addEventListener("input", () => {
 });
 
 function ensureAudio() {
-  applyMusic();
-  if (muted) return;
   const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return;
-  if (!audioCtx) {
-    audioCtx = new AC();
+  if (AC && !audioCtx) audioCtx = new AC();
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  routeMusic();
+  loadHits();
+  applyMusic();
+  if (muted) {
+    if (sfxGain) sfxGain.gain.value = 0;
+    return;
+  }
+  if (!audioCtx) return;
+  if (!engine) {
     const master = audioCtx.createGain();
     master.gain.value = 0;
     const filter = audioCtx.createBiquadFilter();
@@ -1526,10 +1561,11 @@ function update(dt) {
   let target = 0;
   stepDriveGear();
   if (braking) target = 0;
-  else if (gear === "D") target = pedal * TOP_MS;
+  else if (gear === "D") target = pedal * ABSOLUTE_MS;
   else if (gear === "R") target = -pedal * 24;
   const rate = braking ? 26 + stickPower * 16 : gear === "P" ? 18 : pedal > 0 ? 4.9 : 5;
-  speed += clamp(target - speed, -rate * dt, rate * dt);
+  const accel = gear === "D" && pedal > 0 && speed > TOP_MS && target > speed ? 0.35 : rate;
+  speed += clamp(target - speed, -rate * dt, accel * dt);
   if (inTurn && Math.abs(speed) > 18) {
     const capped = 18 * Math.sign(speed);
     speed += (capped - speed) * Math.min(1, dt * 1.4);
@@ -1803,7 +1839,7 @@ function update(dt) {
   stunt.classList.toggle("show", lines.length > 0);
   hudCombo.textContent = "серия x" + Math.min(combo, 8);
   hudProtocol.textContent = "ПРОТОКОЛ " + protocol;
-  hudSpeed.textContent = String(Math.min(TOP_KMH, Math.round(Math.abs(speed) * 3.6))).padStart(3, "0");
+  hudSpeed.textContent = String(Math.min(ABSOLUTE_KMH, Math.round(Math.abs(speed) * 3.6))).padStart(3, "0");
   if (fare) {
     const left = Math.max(0, Math.round(routeMeters(playerEdge, distance, fare.edge, fare.drop)));
     fareEl.textContent = "ДО ВЫСАДКИ  " + left + " м";
@@ -2149,8 +2185,6 @@ resize();
 window.addEventListener("resize", resize);
 
 function paintMute() {
-  const any = !muted || !musicMuted;
-  document.getElementById("sound-btn").textContent = any ? "ЗВУК ВКЛ" : "ЗВУК ВЫКЛ";
   document.getElementById("sfx-btn").classList.toggle("off", muted);
   document.getElementById("music-btn").classList.toggle("off", musicMuted);
 }
@@ -2171,16 +2205,46 @@ function openPause() {
   showSheet("menu");
   silenceGameplay();
 }
-const hitSound = new Audio("./audio/hit.mp3");
-const slapSound = new Audio("./audio/slap.mp3");
+let hitBuf = null;
+let slapBuf = null;
+let hitsLoading = false;
+let pendingHits = [];
+function startHit(buf) {
+  if (!buf || !audioCtx || muted || state !== "play") return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const g = audioCtx.createGain();
+  g.gain.value = Math.min(1, sfxVolume * 4);
+  src.connect(g);
+  g.connect(audioCtx.destination);
+  src.start();
+}
+function loadHits() {
+  if (!audioCtx || hitBuf || hitsLoading) return;
+  hitsLoading = true;
+  const decode = (url) => fetch(url).then((r) => r.arrayBuffer()).then((b) => audioCtx.decodeAudioData(b.slice(0)));
+  Promise.all([decode("./audio/hit.mp3"), decode("./audio/slap.mp3")]).then(([hit, slap]) => {
+    hitBuf = hit;
+    slapBuf = slap;
+    if (pendingHits.length) {
+      pendingHits.forEach((which) => startHit(which === "slap" ? slapBuf : hitBuf));
+      pendingHits.length = 0;
+    }
+  }).catch(() => { hitsLoading = false; });
+}
 let hitCount = 0;
 function playHit() {
+  if (muted || state !== "play") return;
   hitCount += 1;
-  if (hitCount % 2 === 0 || muted || state !== "play") return;
-  const clip = ((hitCount + 1) / 2) % 2 === 1 ? hitSound : slapSound;
-  clip.volume = Math.min(1, sfxVolume * 4);
-  clip.currentTime = 0;
-  clip.play().catch(() => {});
+  const which = hitCount % 2 === 1 ? "hit" : "slap";
+  const buf = which === "hit" ? hitBuf : slapBuf;
+  if (!buf) {
+    pendingHits.push(which);
+    loadHits();
+    return;
+  }
+  startHit(buf);
 }
 let hornCd = 2;
 function horn() {
@@ -2190,21 +2254,13 @@ function horn() {
 }
 function closePause() {
   state = "play";
-  document.getElementById("start-btn").textContent = "ЗА РУЛЬ";
+  document.getElementById("start-btn").textContent = "ПО МАШИНАМ";
   showSheet(null);
 }
 document.getElementById("start-btn").onclick = () => {
   ensureAudio();
   if (state === "paused") closePause();
   else resetShift();
-};
-document.getElementById("sound-btn").onclick = () => {
-  const off = !muted && !musicMuted;
-  muted = off;
-  musicMuted = off;
-  paintMute();
-  if (sfxGain) sfxGain.gain.value = muted ? 0 : sfxVolume;
-  ensureAudio();
 };
 document.getElementById("sfx-btn").onclick = () => { ensureAudio(); toggleSfx(); };
 document.getElementById("music-btn").onclick = () => { ensureAudio(); toggleMusic(); };
@@ -2215,7 +2271,7 @@ document.getElementById("pause-btn").onclick = () => {
 document.getElementById("again-btn").onclick = () => resetShift();
 document.getElementById("over-menu-btn").onclick = () => {
   state = "menu";
-  document.getElementById("start-btn").textContent = "ЗА РУЛЬ";
+  document.getElementById("start-btn").textContent = "ПО МАШИНАМ";
   document.body.classList.remove("playing");
   showSheet("menu");
   silenceGameplay();
@@ -2227,12 +2283,13 @@ function moveStick(e) {
   if (!stickHeld || !stickOrigin) return;
   const dx = e.clientX - stickOrigin.x;
   const dy = stickOrigin.y - e.clientY;
-  throttle = clamp(dy / 130, -1, 1);
+  const stickY = 104;
+  throttle = clamp(dy / stickY, -1, 1);
   const half = Math.max(40, (phone.clientWidth || window.innerWidth) / 2);
   steerTravel = clamp(dx / half, -1, 1);
   steerAxis = clamp(dx / 110, -1, 1);
   stickFill.style.height = (Math.abs(throttle) * 100) + "%";
-  stickKnob.style.transform = "translate(" + clamp(dx, -half + 29, half - 29) + "px, " + clamp(-dy, -130, 130) + "px)";
+  stickKnob.style.transform = "translate(" + clamp(dx, -half + 29, half - 29) + "px, " + clamp(-dy, -stickY, stickY) + "px)";
 }
 stickEl.addEventListener("pointerdown", (e) => {
   stickEl.setPointerCapture(e.pointerId);
